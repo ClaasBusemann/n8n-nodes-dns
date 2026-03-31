@@ -1,0 +1,13 @@
+{
+	"node": "n8n-nodes-dns.dnsLookup",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Miscellaneous"],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/org/n8n-nodes-dns?tab=readme-ov-file"
+			}
+		]
+	}
+}

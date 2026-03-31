@@ -1,0 +1,70 @@
+{
+	"name": "n8n-nodes-dns",
+	"version": "0.1.0",
+	"description": "n8n community node for raw DNS queries using the DNS wire protocol (RFC 1035)",
+	"license": "MIT",
+	"homepage": "",
+	"keywords": [
+		"n8n-community-node-package"
+	],
+	"author": {
+		"name": "Claas Busemann",
+		"email": "claas.busemann@maibornwolff.de"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/<...>/n8n-nodes-dns.git"
+	},
+	"scripts": {
+		"build": "n8n-node build",
+		"build:watch": "tsc --watch",
+		"dev": "n8n-node dev",
+		"lint": "rm -rf coverage && n8n-node lint",
+		"lint:fix": "n8n-node lint --fix",
+		"prepare": "husky",
+		"release": "n8n-node release",
+		"prepublishOnly": "n8n-node prerelease",
+		"test": "jest",
+		"test:unit": "jest --testPathPatterns=test/unit",
+		"test:integration": "jest --testPathPatterns=test/integration",
+		"test:coverage": "jest --coverage"
+	},
+	"files": [
+		"dist"
+	],
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"strict": true,
+		"credentials": [
+			"dist/src/credentials/DnsServerApi.credentials.js"
+		],
+		"nodes": [
+			"dist/src/nodes/DnsLookup/DnsLookup.node.js",
+			"dist/src/nodes/DnsWatch/DnsWatch.node.js"
+		]
+	},
+	"devDependencies": {
+		"@n8n/node-cli": "*",
+		"@types/jest": "^30.0.0",
+		"eslint": "9.32.0",
+		"husky": "^9.1.7",
+		"jest": "^30.3.0",
+		"lint-staged": "^16.4.0",
+		"prettier": "3.6.2",
+		"release-it": "^19.0.4",
+		"ts-jest": "^29.4.6",
+		"typescript": "5.9.2"
+	},
+	"peerDependencies": {
+		"n8n-workflow": "*"
+	},
+	"lint-staged": {
+		"*.ts": [
+			"eslint --fix",
+			"prettier --write"
+		],
+		"package.json": [
+			"eslint --fix"
+		]
+	}
+}
