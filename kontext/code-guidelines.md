@@ -551,3 +551,32 @@ used for anything other than array access, give it a meaningful name.
 
 **Rule of thumb:** if a reviewer would need to scroll up to understand
 what a variable holds, the name is too short.
+
+---
+
+## 11. Scope eslint-disable to single lines with a justification
+
+**Rationale:** A blanket `/* eslint-disable <rule> */` at file scope
+silently suppresses warnings on every future line added to the file,
+including lines that genuinely violate the rule. This hides new problems
+and makes it unclear which lines actually need the suppression. Scoping
+the disable to the exact line that needs it keeps the rest of the file
+protected and forces the author to justify each exception.
+
+```typescript
+// BAD — blanket disable covers the entire file
+/* eslint-disable @n8n/community-nodes/no-restricted-globals */
+
+const timer = setTimeout(() => { ... }, timeout);
+// ... 200 lines later, a new violation slips in unnoticed
+```
+
+```typescript
+// GOOD — scoped to the single line that needs it, with a reason
+// eslint-disable-next-line @n8n/community-nodes/no-restricted-globals -- n8n has no timer API; needed for UDP socket timeout
+const timer = setTimeout(() => { ... }, timeout);
+```
+
+**Rule of thumb:** always use `eslint-disable-next-line`, never
+`eslint-disable`. Every suppression must include a `--` justification
+comment explaining *why* the rule does not apply.

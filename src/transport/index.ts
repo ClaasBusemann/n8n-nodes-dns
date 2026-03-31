@@ -16,3 +16,5 @@ export type {
 	DnsResponse,
 	QueryFlags,
 } from './dns-packet';
+export { querySingleServer, queryMultipleServers } from './dns-client';
+export type { DnsServer, DnsClientOptions, DnsServerResult, DnsQueryResult } from './dns-client';
