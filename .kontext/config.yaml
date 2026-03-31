@@ -1,0 +1,10 @@
+git:
+  commit_mode: branch
+  auto_push: false
+  commit_message_template: '{story_id}: {message}'
+board:
+  columns:
+  - backlog
+  - in_progress
+  - review
+  - done
