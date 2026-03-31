@@ -1,1 +1,2 @@
 export const DNS_MAX_NAME_LENGTH = 253;
+export { decompressName, type DecompressedName } from './name-compression';
