@@ -6,6 +6,14 @@ on:
       - '*.*.*'
   workflow_dispatch:
 
+# Author/owner match requirement (n8n community node verification):
+# The npm package author (package.json "author") must correspond to
+# the GitHub repository owner. For this package:
+#   npm author:   Claas Busemann <claas.busemann@maibornwolff.de>
+#   GitHub owner: ClaasBusemann (https://github.com/ClaasBusemann)
+# Required for verified community node status on n8n Cloud.
+# See: https://docs.n8n.io/integrations/creating-nodes/deploy/submit-community-nodes/
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
