@@ -493,7 +493,17 @@ describe('parseRdata', () => {
 				rdata,
 				rdataOffset: 0,
 			});
-			expect(parseRdata(record, rdata)).toEqual({ raw: text });
+			expect(parseRdata(record, rdata)).toEqual({
+				raw: text,
+				parsed: {
+					type: 'spf',
+					version: 'spf1',
+					mechanisms: [
+						{ qualifier: '+', type: 'include', value: 'example.com' },
+						{ qualifier: '-', type: 'all', value: null },
+					],
+				},
+			});
 		});
 
 		it('should concatenate multiple character strings', () => {
@@ -505,7 +515,7 @@ describe('parseRdata', () => {
 				rdata,
 				rdataOffset: 0,
 			});
-			expect(parseRdata(record, rdata)).toEqual({ raw: 'Hello World' });
+			expect(parseRdata(record, rdata)).toEqual({ raw: 'Hello World', parsed: null });
 		});
 
 		it('should handle an empty TXT record', () => {
@@ -515,7 +525,7 @@ describe('parseRdata', () => {
 				rdata,
 				rdataOffset: 0,
 			});
-			expect(parseRdata(record, rdata)).toEqual({ raw: '' });
+			expect(parseRdata(record, rdata)).toEqual({ raw: '', parsed: null });
 		});
 
 		it('should handle a 255-byte character string', () => {
@@ -526,7 +536,7 @@ describe('parseRdata', () => {
 				rdata,
 				rdataOffset: 0,
 			});
-			expect(parseRdata(record, rdata)).toEqual({ raw: longText });
+			expect(parseRdata(record, rdata)).toEqual({ raw: longText, parsed: null });
 		});
 
 		it('should return parse error when length exceeds buffer', () => {

@@ -1,5 +1,7 @@
 import type { DnsResourceRecord } from '../transport/dns-packet';
 import { decompressName } from './name-compression';
+import type { TxtParsed } from './txt-parsers';
+import { enrichTxtRecord } from './txt-parsers';
 
 // RFC-defined type values inlined to avoid circular dependency with dns-packet.ts
 const TYPE_A = 1;
@@ -23,6 +25,8 @@ export interface MxRecordValue {
 
 export interface TxtRecordValue {
 	raw: string;
+	parsed: TxtParsed | null;
+	parseError?: string;
 }
 
 export interface SrvRecordValue {
@@ -262,7 +266,13 @@ function parseTxtRecord(rdata: Buffer): RecordValue {
 		currentOffset += bytesConsumed;
 	}
 
-	return { raw: segments.join('') } satisfies TxtRecordValue;
+	const raw = segments.join('');
+	const enrichment = enrichTxtRecord(raw);
+
+	if ('parseError' in enrichment) {
+		return { raw, parsed: null, parseError: enrichment.parseError } satisfies TxtRecordValue;
+	}
+	return { raw, parsed: enrichment.parsed } satisfies TxtRecordValue;
 }
 
 function parseCaaRecord(rdata: Buffer): RecordValue {

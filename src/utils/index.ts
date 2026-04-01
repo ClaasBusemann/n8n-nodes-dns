@@ -14,3 +14,5 @@ export type {
 	DnskeyRecordValue,
 	TlsaRecordValue,
 } from './record-parsers';
+export { enrichTxtRecord } from './txt-parsers';
+export type { TxtParsed, SpfParsed, SpfMechanism, DmarcParsed } from './txt-parsers';

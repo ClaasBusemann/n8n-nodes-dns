@@ -30,14 +30,12 @@ describeIntegration('dns-client integration', () => {
 	);
 
 	it(
-		'returns NXDOMAIN for nonexistent subdomain',
+		'returns NXDOMAIN for nonexistent domain',
 		async () => {
-			const result = await querySingleServer(
-				'surely-nonexistent-subdomain-xyz.example.com',
-				'A',
-				CLOUDFLARE,
-				{ timeoutMilliseconds: 5000, retryCount: 0 },
-			);
+			const result = await querySingleServer('nonexistent.test', 'A', CLOUDFLARE, {
+				timeoutMilliseconds: 5000,
+				retryCount: 0,
+			});
 
 			expect(result.responseCode).toBe('NXDOMAIN');
 			expect(result.response).not.toBeNull();
