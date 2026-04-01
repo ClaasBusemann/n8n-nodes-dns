@@ -1,4 +1,3 @@
-export const DNS_DEFAULT_PORT = 53;
 export {
 	encodeQuery,
 	decodeResponse,
@@ -18,3 +17,12 @@ export type {
 } from './dns-packet';
 export { querySingleServer, queryMultipleServers } from './dns-client';
 export type { DnsServer, DnsClientOptions, DnsServerResult, DnsQueryResult } from './dns-client';
+export {
+	DNS_DEFAULT_PORT,
+	WELL_KNOWN_RESOLVERS,
+	parseResolvConf,
+	readSystemResolvers,
+	getWellKnownServers,
+	resolveTargetServers,
+} from './dns-resolvers';
+export type { WellKnownResolver, ResolverMode, ResolverSelection } from './dns-resolvers';
