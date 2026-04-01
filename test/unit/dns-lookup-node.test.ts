@@ -160,6 +160,22 @@ describe('computeConsistencyFlags', () => {
 		expect(flags.uniqueAnswers).toBe(0);
 	});
 
+	it('ignores TTL differences when comparing answers', () => {
+		const entries = [
+			makeServerEntry({
+				answers: [makeFormattedRecord({ ttl: 300 })],
+			}),
+			makeServerEntry({
+				answers: [makeFormattedRecord({ ttl: 60 })],
+			}),
+		];
+
+		const flags = computeConsistencyFlags(entries);
+
+		expect(flags.consistent).toBe(true);
+		expect(flags.uniqueAnswers).toBe(1);
+	});
+
 	it('ignores answer order when comparing', () => {
 		const recordA = makeFormattedRecord({ value: '1.1.1.1' });
 		const recordB = makeFormattedRecord({ value: '2.2.2.2' });
