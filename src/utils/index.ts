@@ -15,4 +15,11 @@ export type {
 	TlsaRecordValue,
 } from './record-parsers';
 export { enrichTxtRecord } from './txt-parsers';
-export type { TxtParsed, SpfParsed, SpfMechanism, DmarcParsed } from './txt-parsers';
+export type {
+	TxtParsed,
+	SpfParsed,
+	SpfMechanism,
+	DmarcParsed,
+	DkimParsed,
+	VerificationParsed,
+} from './txt-parsers';

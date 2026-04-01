@@ -269,6 +269,153 @@ describe('enrichTxtRecord', () => {
 		});
 	});
 
+	describe('DKIM records', () => {
+		it('should parse the design doc example exactly', () => {
+			const result = enrichTxtRecord('v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4...');
+			expect(result).toEqual({
+				parsed: {
+					type: 'dkim',
+					version: 'DKIM1',
+					keyType: 'rsa',
+					publicKey: 'MIGfMA0GCSqGSIb3DQEBAQUAA4...',
+					hashAlgorithms: ['sha256'],
+					serviceTypes: ['*'],
+					flags: [],
+				},
+			});
+		});
+
+		it('should default keyType to rsa when k= is omitted', () => {
+			const result = enrichTxtRecord('v=DKIM1; p=AAAA');
+			expect(result.parsed).toEqual(expect.objectContaining({ keyType: 'rsa' }));
+		});
+
+		it('should default hashAlgorithms to sha256 when h= is omitted', () => {
+			const result = enrichTxtRecord('v=DKIM1; p=AAAA');
+			expect(result.parsed).toEqual(expect.objectContaining({ hashAlgorithms: ['sha256'] }));
+		});
+
+		it('should default serviceTypes to * when s= is omitted', () => {
+			const result = enrichTxtRecord('v=DKIM1; p=AAAA');
+			expect(result.parsed).toEqual(expect.objectContaining({ serviceTypes: ['*'] }));
+		});
+
+		it('should default flags to empty array when t= is omitted', () => {
+			const result = enrichTxtRecord('v=DKIM1; p=AAAA');
+			expect(result.parsed).toEqual(expect.objectContaining({ flags: [] }));
+		});
+
+		it('should parse explicit key type', () => {
+			const result = enrichTxtRecord('v=DKIM1; k=ed25519; p=BBBB');
+			expect(result.parsed).toEqual(expect.objectContaining({ keyType: 'ed25519' }));
+		});
+
+		it('should parse hash algorithms', () => {
+			const result = enrichTxtRecord('v=DKIM1; h=sha1:sha256; p=AAAA');
+			expect(result.parsed).toEqual(
+				expect.objectContaining({ hashAlgorithms: ['sha1', 'sha256'] }),
+			);
+		});
+
+		it('should parse service types', () => {
+			const result = enrichTxtRecord('v=DKIM1; s=email; p=AAAA');
+			expect(result.parsed).toEqual(expect.objectContaining({ serviceTypes: ['email'] }));
+		});
+
+		it('should parse flags', () => {
+			const result = enrichTxtRecord('v=DKIM1; t=y:s; p=AAAA');
+			expect(result.parsed).toEqual(expect.objectContaining({ flags: ['y', 's'] }));
+		});
+
+		it('should strip whitespace from public key for multi-string TXT records', () => {
+			const result = enrichTxtRecord('v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEB AQUAA4GNADCBiQKBgQ');
+			expect(result.parsed).toEqual(
+				expect.objectContaining({
+					publicKey: 'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQ',
+				}),
+			);
+		});
+
+		it('should handle multi-string concatenation with multiple spaces in key', () => {
+			const result = enrichTxtRecord('v=DKIM1; p=AAAA BBBB CCCC');
+			expect(result.parsed).toEqual(expect.objectContaining({ publicKey: 'AAAABBBBCCCC' }));
+		});
+
+		it('should parse empty public key as revoked key', () => {
+			const result = enrichTxtRecord('v=DKIM1; p=');
+			expect(result.parsed).toEqual(expect.objectContaining({ publicKey: '' }));
+		});
+
+		it('should return parseError for malformed DKIM missing p= tag', () => {
+			const result = enrichTxtRecord('v=DKIM1; k=rsa');
+			expect(result.parsed).toBeNull();
+			expect(result.parseError).toEqual(expect.any(String));
+		});
+
+		it('should not match v=DKIM1x as DKIM', () => {
+			const result = enrichTxtRecord('v=DKIM1x; p=AAAA');
+			expect(result.parsed).toBeNull();
+		});
+	});
+
+	describe('verification tokens', () => {
+		it('should detect google-site-verification prefix', () => {
+			const result = enrichTxtRecord('google-site-verification=abc123xyz');
+			expect(result).toEqual({
+				parsed: { type: 'verification', provider: 'google', token: 'abc123xyz' },
+			});
+		});
+
+		it('should detect facebook-domain-verification prefix', () => {
+			const result = enrichTxtRecord('facebook-domain-verification=fb987654');
+			expect(result).toEqual({
+				parsed: { type: 'verification', provider: 'facebook', token: 'fb987654' },
+			});
+		});
+
+		it('should detect MS= prefix (Microsoft 365)', () => {
+			const result = enrichTxtRecord('MS=ms12345678');
+			expect(result).toEqual({
+				parsed: { type: 'verification', provider: 'microsoft', token: 'ms12345678' },
+			});
+		});
+
+		it('should detect atlassian-domain-verification prefix', () => {
+			const result = enrichTxtRecord('atlassian-domain-verification=atltoken');
+			expect(result).toEqual({
+				parsed: { type: 'verification', provider: 'atlassian', token: 'atltoken' },
+			});
+		});
+
+		it('should detect apple-domain-verification prefix', () => {
+			const result = enrichTxtRecord('apple-domain-verification=appletoken');
+			expect(result).toEqual({
+				parsed: { type: 'verification', provider: 'apple', token: 'appletoken' },
+			});
+		});
+
+		it('should detect _github-pages-challenge- prefix', () => {
+			const result = enrichTxtRecord('_github-pages-challenge-myorg');
+			expect(result).toEqual({
+				parsed: { type: 'verification', provider: 'github', token: 'myorg' },
+			});
+		});
+
+		it('should detect stripe-verification prefix', () => {
+			const result = enrichTxtRecord('stripe-verification=stripetoken');
+			expect(result).toEqual({
+				parsed: { type: 'verification', provider: 'stripe', token: 'stripetoken' },
+			});
+		});
+
+		it('should detect postmark-verification prefix', () => {
+			const result = enrichTxtRecord('postmark-verification=pmtoken');
+			expect(result).toEqual({
+				parsed: { type: 'verification', provider: 'postmark', token: 'pmtoken' },
+			});
+		});
+	});
+
 	describe('unrecognized TXT records', () => {
 		it('should return parsed: null for arbitrary text', () => {
 			const result = enrichTxtRecord('some random text');
@@ -281,7 +428,7 @@ describe('enrichTxtRecord', () => {
 		});
 
 		it('should not have parseError for unrecognized records', () => {
-			const result = enrichTxtRecord('google-site-verification=abc123');
+			const result = enrichTxtRecord('some-unknown-prefix=value123');
 			expect(result).toEqual({ parsed: null });
 			expect(result).not.toHaveProperty('parseError');
 		});
@@ -296,6 +443,16 @@ describe('enrichTxtRecord', () => {
 		it('should detect DMARC when not SPF', () => {
 			const result = enrichTxtRecord('v=DMARC1; p=none');
 			expect(result.parsed).toEqual(expect.objectContaining({ type: 'dmarc' }));
+		});
+
+		it('should detect DKIM when not SPF or DMARC', () => {
+			const result = enrichTxtRecord('v=DKIM1; p=AAAA');
+			expect(result.parsed).toEqual(expect.objectContaining({ type: 'dkim' }));
+		});
+
+		it('should detect verification token when not SPF, DMARC, or DKIM', () => {
+			const result = enrichTxtRecord('google-site-verification=token');
+			expect(result.parsed).toEqual(expect.objectContaining({ type: 'verification' }));
 		});
 
 		it('should return null parsed when no detector matches', () => {

@@ -22,7 +22,23 @@ export interface DmarcParsed {
 	alignmentSpf: string;
 }
 
-export type TxtParsed = SpfParsed | DmarcParsed;
+export interface DkimParsed {
+	type: 'dkim';
+	version: string;
+	keyType: string;
+	publicKey: string;
+	hashAlgorithms: string[];
+	serviceTypes: string[];
+	flags: string[];
+}
+
+export interface VerificationParsed {
+	type: 'verification';
+	provider: string;
+	token: string;
+}
+
+export type TxtParsed = SpfParsed | DmarcParsed | DkimParsed | VerificationParsed;
 
 type TxtParseResult = { parsed: TxtParsed } | { parsed: null; parseError: string };
 
@@ -103,7 +119,7 @@ function detectSpf(raw: string): TxtParseResult | null {
 	return { parsed: { type: 'spf', version: 'spf1', mechanisms } };
 }
 
-function parseDmarcTagValue(pair: string): { tag: string; value: string } | null {
+function parseTagValue(pair: string): { tag: string; value: string } | null {
 	const equalsIndex = pair.indexOf('=');
 	if (equalsIndex === -1) {
 		return null;
@@ -138,7 +154,7 @@ function detectDmarc(raw: string): TxtParseResult | null {
 		if (trimmed === '') {
 			continue;
 		}
-		const parsed = parseDmarcTagValue(trimmed);
+		const parsed = parseTagValue(trimmed);
 		if (parsed !== null) {
 			tags.set(parsed.tag, parsed.value);
 		}
@@ -176,7 +192,74 @@ function detectDmarc(raw: string): TxtParseResult | null {
 	};
 }
 
-const TXT_DETECTORS: TxtDetector[] = [detectSpf, detectDmarc];
+function splitColonList(value: string): string[] {
+	return value.split(':').map((item) => item.trim());
+}
+
+function detectDkim(raw: string): TxtParseResult | null {
+	if (!raw.startsWith('v=DKIM1') || (raw.length > 7 && raw[7] !== ';' && raw[7] !== ' ')) {
+		return null;
+	}
+
+	const pairs = raw.split(';').slice(1);
+	const tags = new Map<string, string>();
+
+	for (const pair of pairs) {
+		const trimmed = pair.trim();
+		if (trimmed === '') {
+			continue;
+		}
+		const parsed = parseTagValue(trimmed);
+		if (parsed !== null) {
+			tags.set(parsed.tag, parsed.value);
+		}
+	}
+
+	const publicKey = tags.get('p');
+	if (publicKey === undefined) {
+		return { parsed: null, parseError: 'DKIM record missing required p (public key) tag' };
+	}
+
+	return {
+		parsed: {
+			type: 'dkim',
+			version: 'DKIM1',
+			keyType: tags.get('k') ?? 'rsa',
+			publicKey: publicKey.replace(/\s+/g, ''),
+			hashAlgorithms: tags.has('h') ? splitColonList(tags.get('h')!) : ['sha256'],
+			serviceTypes: tags.has('s') ? splitColonList(tags.get('s')!) : ['*'],
+			flags: tags.has('t') ? splitColonList(tags.get('t')!) : [],
+		},
+	};
+}
+
+const VERIFICATION_PREFIXES: ReadonlyArray<{ prefix: string; provider: string }> = [
+	{ prefix: 'google-site-verification=', provider: 'google' },
+	{ prefix: 'facebook-domain-verification=', provider: 'facebook' },
+	{ prefix: 'MS=', provider: 'microsoft' },
+	{ prefix: 'atlassian-domain-verification=', provider: 'atlassian' },
+	{ prefix: 'apple-domain-verification=', provider: 'apple' },
+	{ prefix: '_github-pages-challenge-', provider: 'github' },
+	{ prefix: 'stripe-verification=', provider: 'stripe' },
+	{ prefix: 'postmark-verification=', provider: 'postmark' },
+];
+
+function detectVerification(raw: string): TxtParseResult | null {
+	for (const { prefix, provider } of VERIFICATION_PREFIXES) {
+		if (raw.startsWith(prefix)) {
+			return {
+				parsed: {
+					type: 'verification',
+					provider,
+					token: raw.slice(prefix.length),
+				},
+			};
+		}
+	}
+	return null;
+}
+
+const TXT_DETECTORS: TxtDetector[] = [detectSpf, detectDmarc, detectDkim, detectVerification];
 
 export function enrichTxtRecord(raw: string): { parsed: TxtParsed | null; parseError?: string } {
 	for (const detector of TXT_DETECTORS) {
