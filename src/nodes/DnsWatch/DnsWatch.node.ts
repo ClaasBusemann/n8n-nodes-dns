@@ -6,14 +6,17 @@ import type {
 	IDataObject,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import type { DnsRecordType } from '../../transport';
+import type { DnsRecordType, DnsServerResult } from '../../transport';
 import { querySingleServer } from '../../transport';
 import type { FormattedRecord } from '../shared/dns-node-helpers';
 import {
+	assertNotFormerr,
 	buildClientOptions,
 	buildSingleServerOutput,
+	buildWarningMessage,
 	extractCustomServers,
 	formatServerResult,
+	isWarnableResponseCode,
 	resolveTargetDnsServers,
 	serializeAnswerValues,
 } from '../shared/dns-node-helpers';
@@ -260,7 +263,18 @@ export class DnsWatch implements INodeType {
 		}
 
 		const server = servers[0]!;
-		const result = await querySingleServer(domain, recordType, server, clientOptions);
+		let result: DnsServerResult;
+		try {
+			result = await querySingleServer(domain, recordType, server, clientOptions);
+		} catch (error) {
+			throw new NodeOperationError(this.getNode(), `DNS query failed: ${(error as Error).message}`);
+		}
+
+		assertNotFormerr(result, domain, this.getNode());
+		if (isWarnableResponseCode(result.responseCode)) {
+			this.logger.warn(buildWarningMessage(domain, result.server.address, result.responseCode));
+		}
+
 		const formatted = formatServerResult(result);
 		const currentAnswers = formatted.answers;
 		const currentHash = serializeAnswerValues(currentAnswers);

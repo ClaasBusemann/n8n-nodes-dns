@@ -1,3 +1,5 @@
+import type { INode } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import type {
 	DnsClientOptions,
 	DnsServer,
@@ -144,4 +146,42 @@ export async function resolveTargetDnsServers(options: ResolveServerOptions): Pr
 		default:
 			throw new Error(`Unknown resolver mode: ${options.mode}`);
 	}
+}
+
+const WARNABLE_RESPONSE_CODES = new Set(['SERVFAIL', 'REFUSED', 'NOTIMP']);
+const FATAL_RESPONSE_CODE = 'FORMERR';
+
+export function isWarnableResponseCode(code: string): boolean {
+	return WARNABLE_RESPONSE_CODES.has(code);
+}
+
+export function isFatalResponseCode(code: string): boolean {
+	return code === FATAL_RESPONSE_CODE;
+}
+
+export function buildWarningMessage(
+	domain: string,
+	serverAddress: string,
+	responseCode: string,
+): string {
+	return `DNS server ${serverAddress} returned ${responseCode} for ${domain}`;
+}
+
+export function assertNotFormerr(
+	result: DnsServerResult,
+	domain: string,
+	node: INode,
+	itemIndex?: number,
+): void {
+	if (isFatalResponseCode(result.responseCode)) {
+		const message = `DNS server ${result.server.address} returned FORMERR for ${domain} — this indicates a malformed query`;
+		const options = itemIndex !== undefined ? { itemIndex } : {};
+		throw new NodeOperationError(node, message, options);
+	}
+}
+
+export function collectResponseWarnings(results: DnsServerResult[], domain: string): string[] {
+	return results
+		.filter((result) => isWarnableResponseCode(result.responseCode))
+		.map((result) => buildWarningMessage(domain, result.server.address, result.responseCode));
 }

@@ -4,16 +4,21 @@ import type {
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
+	NodeExecutionWithMetadata,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import type { DnsRecordType, DnsServerResult } from '../../transport';
 import { queryMultipleServers, querySingleServer } from '../../transport';
 import type { FormattedRecord, ServerResultEntry } from '../shared/dns-node-helpers';
 import {
+	assertNotFormerr,
 	buildClientOptions,
 	buildSingleServerOutput,
+	buildWarningMessage,
+	collectResponseWarnings,
 	extractCustomServers,
 	formatServerResult,
+	isWarnableResponseCode,
 	resolveTargetDnsServers,
 	serializeAnswerValues,
 } from '../shared/dns-node-helpers';
@@ -191,7 +196,7 @@ export class DnsLookup implements INodeType {
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
-		const returnData: INodeExecutionData[] = [];
+		const returnData: NodeExecutionWithMetadata[] = [];
 
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			try {
@@ -237,6 +242,13 @@ export class DnsLookup implements INodeType {
 
 				if (isSingleServer) {
 					const result = await querySingleServer(domain, recordType, servers[0]!, clientOptions);
+					assertNotFormerr(result, domain, this.getNode(), itemIndex);
+					if (isWarnableResponseCode(result.responseCode)) {
+						this.addExecutionHints({
+							message: buildWarningMessage(domain, result.server.address, result.responseCode),
+							type: 'warning',
+						});
+					}
 					outputJson = buildSingleServerOutput(
 						domain,
 						recordType,
@@ -249,6 +261,13 @@ export class DnsLookup implements INodeType {
 						servers,
 						clientOptions,
 					);
+					for (const result of queryResult.results) {
+						assertNotFormerr(result, domain, this.getNode(), itemIndex);
+					}
+					const warnings = collectResponseWarnings(queryResult.results, domain);
+					for (const warning of warnings) {
+						this.addExecutionHints({ message: warning, type: 'warning' });
+					}
 					const consistencyCheck = options.outputConsistencyCheck !== false;
 					outputJson = buildMultiServerOutput(
 						domain,
@@ -258,16 +277,17 @@ export class DnsLookup implements INodeType {
 					) as unknown as IDataObject;
 				}
 
-				returnData.push({
-					json: outputJson,
-					pairedItem: { item: itemIndex },
+				const wrappedItems = this.helpers.constructExecutionMetaData([{ json: outputJson }], {
+					itemData: { item: itemIndex },
 				});
+				returnData.push(...wrappedItems);
 			} catch (error) {
 				if (this.continueOnFail()) {
-					returnData.push({
-						json: { error: (error as Error).message },
-						pairedItem: { item: itemIndex },
-					});
+					const errorItems = this.helpers.constructExecutionMetaData(
+						[{ json: { error: (error as Error).message } }],
+						{ itemData: { item: itemIndex } },
+					);
+					returnData.push(...errorItems);
 					continue;
 				}
 
