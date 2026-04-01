@@ -96,6 +96,11 @@ nodes and/or credentials, you need to make sure to update `n8n.nodes` and
 - **Zero external runtime dependencies.** This project must not add any runtime
   dependencies beyond `n8n-workflow`. Implement functionality from scratch rather
   than pulling in external npm packages.
+- **Use `just` recipes** for all build, lint, test, and verification tasks.
+  Never run raw `npx` or `npm run` commands when a justfile recipe exists. Run
+  `just` to see all available recipes.
+- **Run `just check`** after completing any programming task to verify the full
+  pipeline (lint, format, test with coverage, build, verify) passes.
 - Use the `n8n-node` CLI tool **whenever possible** for building, dev mode,
   linting, etc.
 - **Always** address any lint/typecheck errors/warnings, unless there is a

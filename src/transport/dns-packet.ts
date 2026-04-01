@@ -61,6 +61,7 @@ export interface DnsResponse {
 	answers: DnsResourceRecord[];
 	authorities: DnsResourceRecord[];
 	additionals: DnsResourceRecord[];
+	rawPacket: Buffer;
 }
 
 export const RECORD_TYPE_VALUES: Record<DnsRecordType, number> = {
@@ -284,5 +285,5 @@ export function decodeResponse(packet: Buffer): DnsResponse {
 		afterAuthorities,
 		header.additionalCount,
 	);
-	return { header, questions, answers, authorities, additionals };
+	return { header, questions, answers, authorities, additionals, rawPacket: packet };
 }
