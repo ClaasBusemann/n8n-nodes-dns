@@ -2,12 +2,32 @@
 	"node": "n8n-nodes-dns.dnsLookup",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
-	"categories": ["Miscellaneous"],
+	"categories": ["Utility"],
+	"alias": [
+		"dns",
+		"domain",
+		"nameserver",
+		"nslookup",
+		"dig",
+		"whois",
+		"propagation",
+		"dnsbl",
+		"spf",
+		"dmarc",
+		"dkim",
+		"mx",
+		"txt",
+		"cname",
+		"srv"
+	],
 	"resources": {
 		"primaryDocumentation": [
 			{
-				"url": "https://github.com/org/n8n-nodes-dns?tab=readme-ov-file"
+				"url": "https://github.com/ClaasBusemann/n8n-nodes-dns?tab=readme-ov-file"
 			}
 		]
+	},
+	"subcategories": {
+		"Utility": ["DNS"]
 	}
 }

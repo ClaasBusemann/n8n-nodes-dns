@@ -2,25 +2,25 @@
 	"node": "n8n-nodes-dns.dnsWatch",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
-	"categories": ["Miscellaneous"],
+	"categories": ["Utility"],
 	"alias": [
+		"dns",
+		"domain",
+		"nameserver",
 		"dns watch",
 		"dns monitor",
 		"dns trigger",
 		"domain monitor",
-		"propagation check",
-		"dns",
-		"domain",
-		"nameserver"
+		"propagation check"
 	],
 	"resources": {
 		"primaryDocumentation": [
 			{
-				"url": "https://github.com/org/n8n-nodes-dns?tab=readme-ov-file"
+				"url": "https://github.com/ClaasBusemann/n8n-nodes-dns?tab=readme-ov-file"
 			}
 		]
 	},
 	"subcategories": {
-		"Miscellaneous": ["DNS"]
+		"Utility": ["DNS"]
 	}
 }
