@@ -3,11 +3,24 @@
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
 	"categories": ["Miscellaneous"],
+	"alias": [
+		"dns watch",
+		"dns monitor",
+		"dns trigger",
+		"domain monitor",
+		"propagation check",
+		"dns",
+		"domain",
+		"nameserver"
+	],
 	"resources": {
 		"primaryDocumentation": [
 			{
 				"url": "https://github.com/org/n8n-nodes-dns?tab=readme-ov-file"
 			}
 		]
+	},
+	"subcategories": {
+		"Miscellaneous": ["DNS"]
 	}
 }

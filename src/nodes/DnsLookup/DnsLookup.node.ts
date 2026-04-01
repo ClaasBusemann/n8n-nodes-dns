@@ -6,106 +6,33 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import type {
-	DnsRecordType,
-	DnsClientOptions,
-	DnsServer,
-	DnsServerResult,
-	DnsResourceRecord,
-} from '../../transport';
+import type { DnsRecordType, DnsServerResult } from '../../transport';
+import { queryMultipleServers, querySingleServer } from '../../transport';
+import type { FormattedRecord, ServerResultEntry } from '../shared/dns-node-helpers';
 import {
-	querySingleServer,
-	queryMultipleServers,
-	getWellKnownServers,
-	readSystemResolvers,
-	WELL_KNOWN_RESOLVERS,
-	RECORD_TYPE_NAMES,
-	DNS_DEFAULT_PORT,
-} from '../../transport';
-import { walkDelegationChain, parseRdata } from '../../utils';
-import type { RecordValue } from '../../utils';
+	buildClientOptions,
+	buildSingleServerOutput,
+	extractCustomServers,
+	formatServerResult,
+	resolveTargetDnsServers,
+	serializeAnswerValues,
+} from '../shared/dns-node-helpers';
+import {
+	RECORD_TYPE_OPTIONS,
+	RESOLVER_MODE_OPTIONS,
+	WELL_KNOWN_RESOLVER_OPTIONS,
+	CUSTOM_SERVER_FIELD_VALUES,
+	COMMON_DNS_OPTIONS,
+} from '../shared/dns-node-properties';
 
-const AUTHORITATIVE_RECURSIVE_RESOLVER: DnsServer = {
-	address: '1.1.1.1',
-	port: DNS_DEFAULT_PORT,
+export type { FormattedRecord, ServerResultEntry };
+export {
+	buildClientOptions,
+	buildSingleServerOutput,
+	extractCustomServers,
+	formatServerResult,
+	serializeAnswerValues,
 };
-
-const ipToResolverName = new Map<string, string>();
-for (const resolver of WELL_KNOWN_RESOLVERS) {
-	ipToResolverName.set(resolver.primary, resolver.name);
-	ipToResolverName.set(resolver.secondary, resolver.name);
-}
-
-function getServerName(address: string): string {
-	return ipToResolverName.get(address) ?? address;
-}
-
-export interface FormattedRecord {
-	name: string;
-	type: string;
-	ttl: number;
-	value: RecordValue;
-}
-
-function formatResourceRecords(records: DnsResourceRecord[], rawPacket: Buffer): FormattedRecord[] {
-	return records.map((record) => ({
-		name: record.name,
-		type: RECORD_TYPE_NAMES[record.recordType] ?? `TYPE${record.recordType}`,
-		ttl: record.ttl,
-		value: parseRdata(record, rawPacket),
-	}));
-}
-
-export interface ServerResultEntry {
-	server: string;
-	serverName: string;
-	authoritative: boolean;
-	responseCode: string;
-	responseTimeMs: number;
-	answers: FormattedRecord[];
-	authority: FormattedRecord[];
-	additional: FormattedRecord[];
-	truncated?: boolean;
-}
-
-export function formatServerResult(result: DnsServerResult): ServerResultEntry {
-	const response = result.response;
-	const entry: ServerResultEntry = {
-		server: result.server.address,
-		serverName: getServerName(result.server.address),
-		authoritative: response?.header.flags.authoritative ?? false,
-		responseCode: result.responseCode,
-		responseTimeMs: result.responseTimeMilliseconds,
-		answers: response ? formatResourceRecords(response.answers, response.rawPacket) : [],
-		authority: response ? formatResourceRecords(response.authorities, response.rawPacket) : [],
-		additional: response ? formatResourceRecords(response.additionals, response.rawPacket) : [],
-	};
-
-	if (result.truncated) {
-		entry.truncated = true;
-	}
-
-	return entry;
-}
-
-export function buildSingleServerOutput(
-	domain: string,
-	recordType: string,
-	result: DnsServerResult,
-): Record<string, unknown> {
-	return {
-		domain,
-		type: recordType,
-		...formatServerResult(result),
-	};
-}
-
-export function serializeAnswerValues(answers: FormattedRecord[]): string {
-	const normalized = answers
-		.map((answer) => JSON.stringify({ name: answer.name, type: answer.type, value: answer.value }))
-		.sort();
-	return JSON.stringify(normalized);
-}
 
 export function computeConsistencyFlags(entries: ServerResultEntry[]): {
 	consistent: boolean;
@@ -155,54 +82,6 @@ export function buildMultiServerOutput(
 	return output;
 }
 
-async function resolveTargetDnsServers(
-	mode: string,
-	wellKnownNames: string[],
-	customServers: DnsServer[],
-	domain: string,
-	clientOptions: DnsClientOptions,
-): Promise<DnsServer[]> {
-	switch (mode) {
-		case 'wellKnown':
-			return getWellKnownServers(wellKnownNames);
-		case 'custom':
-			return customServers;
-		case 'authoritative':
-			return walkDelegationChain(domain, {
-				recursiveResolver: AUTHORITATIVE_RECURSIVE_RESOLVER,
-				clientOptions,
-			});
-		case 'system':
-			return readSystemResolvers();
-		default:
-			throw new Error(`Unknown resolver mode: ${mode}`);
-	}
-}
-
-export function buildClientOptions(options: {
-	timeout?: number;
-	retryCount?: number;
-	recursionDesired?: boolean;
-}): DnsClientOptions {
-	return {
-		...(options.timeout !== undefined && { timeoutMilliseconds: options.timeout }),
-		...(options.retryCount !== undefined && { retryCount: options.retryCount }),
-		...(options.recursionDesired !== undefined && {
-			recursionDesired: options.recursionDesired,
-		}),
-	};
-}
-
-export function extractCustomServers(paramValue: unknown): DnsServer[] {
-	const collection = paramValue as {
-		serverValues?: Array<{ address: string; port: number }>;
-	};
-	return (collection.serverValues ?? []).map((server) => ({
-		address: server.address,
-		port: server.port ?? DNS_DEFAULT_PORT,
-	}));
-}
-
 export class DnsLookup implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'DNS Lookup',
@@ -239,25 +118,7 @@ export class DnsLookup implements INodeType {
 				name: 'recordType',
 				type: 'options',
 				noDataExpression: true,
-				options: [
-					{ name: 'A', value: 'A', description: 'IPv4 address record' },
-					{ name: 'AAAA', value: 'AAAA', description: 'IPv6 address record' },
-					{ name: 'CAA', value: 'CAA', description: 'Certificate Authority Authorization' },
-					{ name: 'CNAME', value: 'CNAME', description: 'Canonical name (alias)' },
-					{ name: 'DNSKEY', value: 'DNSKEY', description: 'DNSSEC public key' },
-					{ name: 'MX', value: 'MX', description: 'Mail exchange server' },
-					{ name: 'NAPTR', value: 'NAPTR', description: 'Naming Authority Pointer' },
-					{ name: 'NS', value: 'NS', description: 'Authoritative nameserver' },
-					{ name: 'PTR', value: 'PTR', description: 'Pointer record (reverse DNS)' },
-					{ name: 'SOA', value: 'SOA', description: 'Start of authority' },
-					{ name: 'SRV', value: 'SRV', description: 'Service locator' },
-					{ name: 'TLSA', value: 'TLSA', description: 'TLS certificate association' },
-					{
-						name: 'TXT',
-						value: 'TXT',
-						description: 'Text record (SPF, DMARC, DKIM, verification)',
-					},
-				],
+				options: RECORD_TYPE_OPTIONS,
 				default: 'A',
 				description: 'The DNS record type to query',
 			},
@@ -266,28 +127,7 @@ export class DnsLookup implements INodeType {
 				name: 'resolverMode',
 				type: 'options',
 				noDataExpression: true,
-				options: [
-					{
-						name: 'Well-Known',
-						value: 'wellKnown',
-						description: 'Use public DNS resolvers (Cloudflare, Google, etc.)',
-					},
-					{
-						name: 'Custom',
-						value: 'custom',
-						description: 'Specify custom DNS server addresses',
-					},
-					{
-						name: 'Authoritative (Auto-Discover)',
-						value: 'authoritative',
-						description: 'Auto-discover and query the authoritative nameservers for the domain',
-					},
-					{
-						name: 'System',
-						value: 'system',
-						description: 'Use the system DNS resolver from /etc/resolv.conf',
-					},
-				],
+				options: RESOLVER_MODE_OPTIONS,
 				default: 'wellKnown',
 				description: 'How to select the DNS servers to query',
 			},
@@ -300,53 +140,7 @@ export class DnsLookup implements INodeType {
 						resolverMode: ['wellKnown'],
 					},
 				},
-				options: [
-					{
-						name: 'AdGuard',
-						value: 'AdGuard',
-						description: 'Ad blocking DNS (94.140.14.14)',
-					},
-					{
-						name: 'Cloudflare',
-						value: 'Cloudflare',
-						description: 'Fastest average response time (1.1.1.1)',
-					},
-					{
-						name: 'Cloudflare Family',
-						value: 'Cloudflare Family',
-						description: 'Malware + adult content blocking (1.1.1.3)',
-					},
-					{
-						name: 'Cloudflare Malware',
-						value: 'Cloudflare Malware',
-						description: 'Malware blocking (1.1.1.2)',
-					},
-					{
-						name: 'Control D',
-						value: 'Control D',
-						description: 'Configurable filtering (76.76.2.0)',
-					},
-					{
-						name: 'Google',
-						value: 'Google',
-						description: 'Widest adoption (8.8.8.8)',
-					},
-					{
-						name: 'OpenDNS',
-						value: 'OpenDNS',
-						description: 'Cisco-operated (208.67.222.222)',
-					},
-					{
-						name: 'Quad9',
-						value: 'Quad9',
-						description: 'Malware blocking enabled (9.9.9.9)',
-					},
-					{
-						name: 'Quad9 Unfiltered',
-						value: 'Quad9 Unfiltered',
-						description: 'No filtering (9.9.9.10)',
-					},
-				],
+				options: WELL_KNOWN_RESOLVER_OPTIONS,
 				default: ['Cloudflare'],
 				description:
 					'Public DNS resolvers to query (each resolver uses both primary and secondary servers)',
@@ -369,24 +163,7 @@ export class DnsLookup implements INodeType {
 					{
 						name: 'serverValues',
 						displayName: 'Server',
-						values: [
-							{
-								displayName: 'IP Address',
-								name: 'address',
-								type: 'string',
-								required: true,
-								default: '',
-								placeholder: '1.1.1.1',
-								description: 'IP address of the DNS server',
-							},
-							{
-								displayName: 'Port',
-								name: 'port',
-								type: 'number',
-								default: 53,
-								description: 'UDP port of the DNS server',
-							},
-						],
+						values: CUSTOM_SERVER_FIELD_VALUES,
 					},
 				],
 				description: 'Custom DNS servers to query',
@@ -406,33 +183,7 @@ export class DnsLookup implements INodeType {
 						description:
 							'Whether to add consistency and propagation flags when querying multiple servers',
 					},
-					{
-						displayName: 'Recursion Desired',
-						name: 'recursionDesired',
-						type: 'boolean',
-						default: true,
-						description: 'Whether to set the RD (Recursion Desired) flag in the DNS query',
-					},
-					{
-						displayName: 'Retry Count',
-						name: 'retryCount',
-						type: 'number',
-						default: 1,
-						typeOptions: {
-							minValue: 0,
-						},
-						description: 'Number of retries on timeout',
-					},
-					{
-						displayName: 'Timeout',
-						name: 'timeout',
-						type: 'number',
-						default: 5000,
-						typeOptions: {
-							minValue: 100,
-						},
-						description: 'Per-query timeout in milliseconds',
-					},
+					...COMMON_DNS_OPTIONS,
 				],
 			},
 		],
@@ -465,13 +216,13 @@ export class DnsLookup implements INodeType {
 						? extractCustomServers(this.getNodeParameter('customServers', itemIndex, {}))
 						: [];
 
-				const servers = await resolveTargetDnsServers(
-					resolverMode,
+				const servers = await resolveTargetDnsServers({
+					mode: resolverMode,
 					wellKnownNames,
 					customServers,
 					domain,
 					clientOptions,
-				);
+				});
 
 				if (servers.length === 0) {
 					throw new NodeOperationError(

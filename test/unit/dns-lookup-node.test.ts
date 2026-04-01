@@ -2,24 +2,17 @@ import type { DnsServerResult, DnsResponse } from '../../src/transport';
 import { DNS_DEFAULT_PORT } from '../../src/transport';
 import {
 	computeConsistencyFlags,
+	buildMultiServerOutput,
+} from '../../src/nodes/DnsLookup/DnsLookup.node';
+import type { ServerResultEntry } from '../../src/nodes/shared/dns-node-helpers';
+import {
 	serializeAnswerValues,
 	formatServerResult,
 	buildSingleServerOutput,
-	buildMultiServerOutput,
 	buildClientOptions,
 	extractCustomServers,
-} from '../../src/nodes/DnsLookup/DnsLookup.node';
-import type { FormattedRecord, ServerResultEntry } from '../../src/nodes/DnsLookup/DnsLookup.node';
-
-function makeFormattedRecord(overrides: Partial<FormattedRecord> = {}): FormattedRecord {
-	return {
-		name: 'example.com',
-		type: 'A',
-		ttl: 300,
-		value: '93.184.216.34',
-		...overrides,
-	};
-}
+} from '../../src/nodes/shared/dns-node-helpers';
+import { makeFormattedRecord } from '../helpers/mock-dns-records';
 
 function makeServerEntry(overrides: Partial<ServerResultEntry> = {}): ServerResultEntry {
 	return {
