@@ -7,3 +7,4 @@ coverage/
 .env
 .env*.local
 *.log
+test/.dns-server-state.json

@@ -6,6 +6,8 @@ const config: JestConfigWithTsJest = {
 	testEnvironment: 'node',
 	roots: ['<rootDir>/test'],
 	testMatch: ['<rootDir>/test/unit/**/*.test.ts', '<rootDir>/test/integration/**/*.test.ts'],
+	globalSetup: '<rootDir>/test/global-setup.ts',
+	globalTeardown: '<rootDir>/test/global-teardown.ts',
 	transform: {
 		'^.+\\.ts$': [
 			'ts-jest',

@@ -38,19 +38,19 @@ format-check:
 test-unit:
     npx jest --testPathPatterns="test/unit"
 
-# Run integration tests (requires network access)
+# Run integration tests (uses in-process DNS server)
 test-int:
     RUN_INTEGRATION_TESTS=1 npx jest --testPathPatterns="test/integration"
 
-# Run unit + integration (default CI suite)
+# Run unit + integration
 test:
-    npx jest --testPathPatterns="test/unit|test/integration"
+    RUN_INTEGRATION_TESTS=1 npx jest --testPathPatterns="test/unit|test/integration"
 
 # Run unit + integration tests with coverage enforcement
 test-coverage:
-    npx jest --testPathPatterns="test/unit|test/integration" --coverage
+    RUN_INTEGRATION_TESTS=1 npx jest --testPathPatterns="test/unit|test/integration" --coverage
 
-# Run e2e tests (requires network access)
+# Run e2e tests (uses in-process DNS server)
 test-e2e:
     RUN_INTEGRATION_TESTS=1 npx jest --testMatch="**/test/e2e/**/*.test.ts"
 
