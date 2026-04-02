@@ -1,5 +1,4 @@
-// fs is a Node.js built-in required for reading /etc/resolv.conf — not an external dependency
-// eslint-disable-next-line @n8n/community-nodes/no-restricted-imports
+// eslint-disable-next-line @n8n/community-nodes/no-restricted-imports -- fs is a Node.js built-in for reading /etc/resolv.conf, not an external dependency
 import * as fs from 'fs';
 import type { DnsServer } from './dns-client';
 

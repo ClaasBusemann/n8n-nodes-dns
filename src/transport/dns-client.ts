@@ -1,5 +1,4 @@
-// dgram is a Node.js built-in required for raw UDP DNS queries — not an external dependency
-// eslint-disable-next-line @n8n/community-nodes/no-restricted-imports
+// eslint-disable-next-line @n8n/community-nodes/no-restricted-imports -- dgram is a Node.js built-in for raw UDP DNS queries, not an external dependency
 import * as dgram from 'dgram';
 import { encodeQuery, decodeResponse, RESPONSE_CODE_NAMES } from './dns-packet';
 import type { DnsRecordType, DnsResponse } from './dns-packet';
