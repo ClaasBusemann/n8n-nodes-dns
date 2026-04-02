@@ -1,9 +1,6 @@
 import { querySingleServer, queryMultipleServers } from '../../src/transport/dns-client';
 import type { DnsServer } from '../../src/transport/dns-client';
-
-// eslint-disable-next-line @n8n/community-nodes/no-restricted-globals
-const SHOULD_RUN = process.env.RUN_INTEGRATION_TESTS === '1';
-const describeIntegration = SHOULD_RUN ? describe : describe.skip;
+import { describeIntegration } from '../helpers/integration-gate';
 
 const CLOUDFLARE: DnsServer = { address: '1.1.1.1', port: 53 };
 const GOOGLE: DnsServer = { address: '8.8.8.8', port: 53 };
@@ -44,15 +41,25 @@ describeIntegration('dns-client integration', () => {
 	);
 
 	it(
-		'returns TIMEOUT for unreachable server',
+		'returns TIMEOUT for unreachable server after retries are exhausted',
 		async () => {
+			const perAttemptTimeout = 1000;
+			const retryCount = 1;
+			const startTime = Date.now();
+
 			const result = await querySingleServer('example.com', 'A', UNREACHABLE, {
-				timeoutMilliseconds: 1000,
-				retryCount: 0,
+				timeoutMilliseconds: perAttemptTimeout,
+				retryCount,
 			});
+
+			const elapsedMilliseconds = Date.now() - startTime;
 
 			expect(result.responseCode).toBe('TIMEOUT');
 			expect(result.response).toBeNull();
+			// With 1 retry (2 total attempts × 1 000 ms each), elapsed must exceed a single timeout
+			expect(elapsedMilliseconds).toBeGreaterThanOrEqual(
+				perAttemptTimeout * (1 + retryCount) - 100,
+			);
 		},
 		NETWORK_TEST_TIMEOUT,
 	);
@@ -77,15 +84,33 @@ describeIntegration('dns-client integration', () => {
 	it(
 		'matches transaction ID between request and response',
 		async () => {
-			const result = await querySingleServer('example.com', 'A', CLOUDFLARE, {
-				timeoutMilliseconds: 5000,
-				retryCount: 0,
-			});
+			const queries = await Promise.all([
+				querySingleServer('example.com', 'A', CLOUDFLARE, {
+					timeoutMilliseconds: 5000,
+					retryCount: 0,
+				}),
+				querySingleServer('example.com', 'A', GOOGLE, {
+					timeoutMilliseconds: 5000,
+					retryCount: 0,
+				}),
+			]);
 
-			expect(result.response).not.toBeNull();
-			const transactionId = result.response!.header.transactionId;
-			expect(transactionId).toBeGreaterThanOrEqual(0);
-			expect(transactionId).toBeLessThanOrEqual(0xffff);
+			for (const result of queries) {
+				expect(result.response).not.toBeNull();
+				const transactionId = result.response!.header.transactionId;
+				expect(transactionId).toBeGreaterThanOrEqual(0);
+				expect(transactionId).toBeLessThanOrEqual(0xffff);
+				// The response raw packet's first two bytes must equal the header's transaction ID,
+				// confirming the client matched request and response by ID
+				const rawTransactionId = result.response!.rawPacket.readUInt16BE(0);
+				expect(rawTransactionId).toBe(transactionId);
+			}
+
+			// Two independent queries should (almost certainly) have distinct transaction IDs,
+			// proving the client uses unique random IDs rather than a hardcoded value
+			const firstId = queries[0]!.response!.header.transactionId;
+			const secondId = queries[1]!.response!.header.transactionId;
+			expect(firstId).not.toBe(secondId);
 		},
 		NETWORK_TEST_TIMEOUT,
 	);
