@@ -21,6 +21,7 @@ An [n8n](https://n8n.io/) community node for raw DNS queries using the [DNS wire
 - **Truncated response handling** — responses with the TC flag include a `truncated: true` field
 - **Item linking** — correct `pairedItem` on every output for n8n expression support in downstream nodes
 - **Pure wire protocol** — zero external runtime dependencies, implements RFC 1035 from scratch using only Node.js built-ins (`dgram`, `crypto`, `Buffer`)
+- **AI agent integration** — `usableAsTool` enabled on both nodes for use in n8n AI workflows
 - **Continue on fail** — standard n8n error handling support
 
 ## Installation
@@ -38,7 +39,7 @@ Perform raw DNS queries using the DNS wire protocol.
 | **Domain** | The domain name to query (expression-enabled for per-item resolution) |
 | **Record Type** | A, AAAA, MX, TXT, SRV, PTR, CAA, SOA, NS, CNAME, NAPTR, DNSKEY, TLSA |
 | **Resolver Mode** | Well-Known, Custom, Authoritative (auto-discover), System |
-| **Resolvers** | Select one or more: Cloudflare, Google, Quad9, OpenDNS, AdGuard, Control D |
+| **Resolvers** | Select one or more: Cloudflare, Cloudflare Malware, Cloudflare Family, Google, Quad9, Quad9 Unfiltered, OpenDNS, AdGuard, Control D |
 | **Custom Servers** | Repeatable IP/port pairs (visible when Resolver Mode = Custom) |
 | **Options** | Output consistency check, timeout, retry count, recursion desired |
 
@@ -116,6 +117,8 @@ When querying multiple servers, the output is one combined item per input with c
 | NS / CNAME / PTR | Plain hostname string |
 | CAA | `{ "flags": 0, "tag": "issue", "value": "letsencrypt.org" }` |
 | NAPTR | `{ "order": 10, "preference": 100, "flags": "s", "service": "SIP+D2U", ... }` |
+| DNSKEY | `{ "flags": 256, "protocol": 3, "algorithm": 13, "publicKey": "base64..." }` |
+| TLSA | `{ "usage": 3, "selector": 1, "matchingType": 1, "certificateData": "hex..." }` |
 
 ## Compatibility
 

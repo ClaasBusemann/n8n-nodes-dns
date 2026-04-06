@@ -280,31 +280,36 @@ export class DnsWatch implements INodeType {
 		const currentHash = serializeAnswerValues(currentAnswers);
 		const currentHasRecords = currentAnswers.length > 0;
 
+		const isManualTest = this.getMode() === 'manual';
 		const staticData = this.getWorkflowStaticData('node') as WatchStaticData;
 
 		if (staticData.previousAnswerHash === undefined) {
 			staticData.previousAnswerHash = currentHash;
 			staticData.previousHadRecords = currentHasRecords;
-			return null;
+			if (!isManualTest) {
+				return null;
+			}
 		}
 
-		const expectedValue =
-			fireOn === 'valueMatches' ? (this.getNodeParameter('expectedValue') as string) : '';
+		if (!isManualTest) {
+			const expectedValue =
+				fireOn === 'valueMatches' ? (this.getNodeParameter('expectedValue') as string) : '';
 
-		const shouldFire = checkFireCondition(fireOn, {
-			currentHash,
-			previousHash: staticData.previousAnswerHash,
-			currentHasRecords,
-			previousHadRecords: staticData.previousHadRecords ?? false,
-			currentAnswers,
-			expectedValue,
-		});
+			const shouldFire = checkFireCondition(fireOn, {
+				currentHash,
+				previousHash: staticData.previousAnswerHash,
+				currentHasRecords,
+				previousHadRecords: staticData.previousHadRecords ?? false,
+				currentAnswers,
+				expectedValue,
+			});
 
-		staticData.previousAnswerHash = currentHash;
-		staticData.previousHadRecords = currentHasRecords;
+			staticData.previousAnswerHash = currentHash;
+			staticData.previousHadRecords = currentHasRecords;
 
-		if (!shouldFire) {
-			return null;
+			if (!shouldFire) {
+				return null;
+			}
 		}
 
 		const outputJson = buildSingleServerOutput(
