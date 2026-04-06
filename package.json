@@ -35,8 +35,7 @@
 		"monitoring"
 	],
 	"author": {
-		"name": "Claas Busemann",
-		"email": "claas.busemann@maibornwolff.de"
+		"name": "Claas Busemann"
 	},
 	"repository": {
 		"type": "git",
