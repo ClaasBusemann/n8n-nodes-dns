@@ -6,6 +6,18 @@ An [n8n](https://n8n.io/) community node for raw DNS queries using the [DNS wire
 
 [Installation](#installation) | [Operations](#operations) | [Credentials](#credentials) | [Compatibility](#compatibility) | [Resources](#resources)
 
+## Why this node?
+
+There is no built-in n8n node for raw DNS queries. The Node.js `dns` module (accessible via the Code node) delegates to the system resolver and hides critical information — you can't choose which nameserver to query, don't get TTL values, can't see authority sections, and can't query multiple resolvers in parallel.
+
+Common workarounds have significant drawbacks:
+
+- **Execute Command + `dig`** — fragile text parsing, unavailable on n8n Cloud
+- **HTTP Request + Google DoH** — requires 7+ nodes for what should be one operation, locked to a single resolver, no propagation checking
+- **Third-party APIs** — paid services with no control over which resolver is queried
+
+This node replaces all of that with a single node that speaks the DNS wire protocol directly, returning structured JSON with full control over which servers to query.
+
 ## Features
 
 - **13 record types** — A, AAAA, MX, TXT, SRV, PTR, CAA, SOA, NS, CNAME, NAPTR, DNSKEY, TLSA
