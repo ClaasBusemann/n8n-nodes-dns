@@ -2,6 +2,7 @@ import type { INode } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import type {
 	DnsClientOptions,
+	DnsRecordType,
 	DnsServer,
 	DnsServerResult,
 	DnsResourceRecord,
@@ -184,4 +185,48 @@ export function collectResponseWarnings(results: DnsServerResult[], domain: stri
 	return results
 		.filter((result) => isWarnableResponseCode(result.responseCode))
 		.map((result) => buildWarningMessage(domain, result.server.address, result.responseCode));
+}
+
+export interface DnsParameterReader {
+	getParam(name: string, fallback?: unknown): unknown;
+}
+
+export interface DnsNodeOptions {
+	timeout?: number;
+	retryCount?: number;
+	recursionDesired?: boolean;
+	outputConsistencyCheck?: boolean;
+}
+
+export interface DnsQueryParams {
+	domain: string;
+	recordType: DnsRecordType;
+	resolverMode: string;
+	options: DnsNodeOptions;
+	clientOptions: DnsClientOptions;
+	servers: DnsServer[];
+}
+
+export async function extractDnsQueryParams(reader: DnsParameterReader): Promise<DnsQueryParams> {
+	const domain = reader.getParam('domain') as string;
+	const recordType = reader.getParam('recordType') as DnsRecordType;
+	const resolverMode = reader.getParam('resolverMode') as string;
+	const options = reader.getParam('options', {}) as DnsNodeOptions;
+
+	const clientOptions = buildClientOptions(options);
+
+	const wellKnownNames =
+		resolverMode === 'wellKnown' ? (reader.getParam('resolvers') as string[]) : [];
+	const customServers =
+		resolverMode === 'custom' ? extractCustomServers(reader.getParam('customServers', {})) : [];
+
+	const servers = await resolveTargetDnsServers({
+		mode: resolverMode,
+		wellKnownNames,
+		customServers,
+		domain,
+		clientOptions,
+	});
+
+	return { domain, recordType, resolverMode, options, clientOptions, servers };
 }

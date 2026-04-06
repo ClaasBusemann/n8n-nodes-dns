@@ -580,3 +580,102 @@ const timer = setTimeout(() => { ... }, timeout);
 **Rule of thumb:** always use `eslint-disable-next-line`, never
 `eslint-disable`. Every suppression must include a `--` justification
 comment explaining *why* the rule does not apply.
+
+---
+
+## 12. Keep functions under ~30 lines — extract when they grow
+
+**Rationale:** Long functions accumulate multiple responsibilities and
+deep nesting. A function that reads input, resolves configuration,
+performs I/O, branches on results, formats output, and handles errors
+is doing too many things. When a function exceeds roughly 30 lines of
+logic (excluding type declarations and static configuration objects),
+it almost always contains extractable steps that would be clearer as
+named helpers. The same applies to nesting: if a function reaches 3+
+levels of indentation (loop > try > if > if), the inner blocks should
+be lifted into their own functions.
+
+```typescript
+// BAD — 80+ line function doing everything inline
+async function handleItems(items: Item[]): Promise<Result[]> {
+  const results: Result[] = [];
+  for (let i = 0; i < items.length; i++) {
+    try {
+      const config = readConfig(items[i]);
+      const targets = await resolveTargets(config);
+      if (targets.length === 0) {
+        throw new Error('no targets');
+      }
+      if (targets.length === 1) {
+        const response = await fetchOne(targets[0], config);
+        if (isWarning(response.status)) {           // level 4
+          logWarning(response);
+        }
+        results.push(formatSingle(response));
+      } else {
+        const responses = await fetchAll(targets, config);
+        for (const response of responses) {         // level 4
+          validate(response);
+        }
+        const warnings = collectWarnings(responses);
+        for (const warning of warnings) {           // level 4
+          logWarning(warning);
+        }
+        results.push(formatMulti(responses));
+      }
+    } catch (error) {
+      if (shouldContinue()) {
+        results.push({ error: (error as Error).message });
+        continue;
+      }
+      throw error;
+    }
+  }
+  return results;
+}
+```
+
+```typescript
+// GOOD — top-level function is a thin loop, logic is in named helpers
+async function handleItems(items: Item[]): Promise<Result[]> {
+  const results: Result[] = [];
+  for (let i = 0; i < items.length; i++) {
+    try {
+      results.push(await processItem(items[i]));
+    } catch (error) {
+      if (shouldContinue()) {
+        results.push({ error: (error as Error).message });
+        continue;
+      }
+      throw error;
+    }
+  }
+  return results;
+}
+
+async function processItem(item: Item): Promise<Result> {
+  const config = readConfig(item);
+  const targets = await resolveTargets(config);
+  if (targets.length === 0) throw new Error('no targets');
+  return targets.length === 1
+    ? await fetchAndFormatSingle(targets[0], config)
+    : await fetchAndFormatMulti(targets, config);
+}
+
+async function fetchAndFormatSingle(target: Target, config: Config): Promise<Result> {
+  const response = await fetchOne(target, config);
+  if (isWarning(response.status)) logWarning(response);
+  return formatSingle(response);
+}
+
+async function fetchAndFormatMulti(targets: Target[], config: Config): Promise<Result> {
+  const responses = await fetchAll(targets, config);
+  responses.forEach(validate);
+  collectWarnings(responses).forEach(logWarning);
+  return formatMulti(responses);
+}
+```
+
+**Rule of thumb:** if you need to scroll to see an entire function, it
+is too long. Extract named steps until each function fits on one screen
+(~30 lines) and stays at 2 or fewer levels of nesting.

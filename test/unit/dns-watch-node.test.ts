@@ -1,5 +1,9 @@
 import { serializeAnswerValues } from '../../src/nodes/shared/dns-node-helpers';
-import { checkFireCondition, answersContainValue } from '../../src/nodes/DnsWatch/DnsWatch.node';
+import {
+	checkFireCondition,
+	answersContainValue,
+	evaluatePollFireCondition,
+} from '../../src/nodes/DnsWatch/DnsWatch.node';
 import { makeFormattedRecord } from '../helpers/mock-dns-records';
 
 function makeFireConditionContext(
@@ -224,5 +228,74 @@ describe('checkFireCondition', () => {
 		expect(() => checkFireCondition('unknownMode', context)).toThrow(
 			'Unknown fire condition mode: unknownMode',
 		);
+	});
+});
+
+describe('evaluatePollFireCondition', () => {
+	const answers = [makeFormattedRecord({ value: '1.1.1.1' })];
+	const hash = serializeAnswerValues(answers);
+
+	function makeContext(
+		overrides: Partial<Parameters<typeof evaluatePollFireCondition>[0]> = {},
+	): Parameters<typeof evaluatePollFireCondition>[0] {
+		return {
+			currentHash: hash,
+			currentHasRecords: true,
+			currentAnswers: answers,
+			staticData: {},
+			fireOn: 'anyChange',
+			expectedValue: '',
+			isManualTest: false,
+			...overrides,
+		};
+	}
+
+	it('initializes state and returns false on first poll (non-manual)', () => {
+		const staticData: { previousAnswerHash?: string; previousHadRecords?: boolean } = {};
+		const result = evaluatePollFireCondition(makeContext({ staticData }));
+
+		expect(result).toBe(false);
+		expect(staticData.previousAnswerHash).toBe(hash);
+		expect(staticData.previousHadRecords).toBe(true);
+	});
+
+	it('initializes state and returns true on first poll (manual test)', () => {
+		const staticData: { previousAnswerHash?: string; previousHadRecords?: boolean } = {};
+		const result = evaluatePollFireCondition(makeContext({ staticData, isManualTest: true }));
+
+		expect(result).toBe(true);
+		expect(staticData.previousAnswerHash).toBe(hash);
+	});
+
+	it('always returns true for manual test after initialization', () => {
+		const staticData = { previousAnswerHash: hash, previousHadRecords: true };
+		const result = evaluatePollFireCondition(makeContext({ staticData, isManualTest: true }));
+
+		expect(result).toBe(true);
+	});
+
+	it('returns true when fire condition is met', () => {
+		const oldHash = serializeAnswerValues([makeFormattedRecord({ value: '2.2.2.2' })]);
+		const staticData = { previousAnswerHash: oldHash, previousHadRecords: true };
+		const result = evaluatePollFireCondition(makeContext({ staticData }));
+
+		expect(result).toBe(true);
+		expect(staticData.previousAnswerHash).toBe(hash);
+	});
+
+	it('returns false when fire condition is not met', () => {
+		const staticData = { previousAnswerHash: hash, previousHadRecords: true };
+		const result = evaluatePollFireCondition(makeContext({ staticData }));
+
+		expect(result).toBe(false);
+	});
+
+	it('updates staticData after evaluation', () => {
+		const oldHash = serializeAnswerValues([makeFormattedRecord({ value: '9.9.9.9' })]);
+		const staticData = { previousAnswerHash: oldHash, previousHadRecords: false };
+		evaluatePollFireCondition(makeContext({ staticData }));
+
+		expect(staticData.previousAnswerHash).toBe(hash);
+		expect(staticData.previousHadRecords).toBe(true);
 	});
 });

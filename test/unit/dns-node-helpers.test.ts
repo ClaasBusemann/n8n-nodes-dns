@@ -6,7 +6,9 @@ import {
 	buildWarningMessage,
 	assertNotFormerr,
 	collectResponseWarnings,
+	extractDnsQueryParams,
 } from '../../src/nodes/shared/dns-node-helpers';
+import type { DnsParameterReader } from '../../src/nodes/shared/dns-node-helpers';
 
 function makeNode() {
 	return {
@@ -136,5 +138,92 @@ describe('collectResponseWarnings', () => {
 
 	it('returns empty array for empty results', () => {
 		expect(collectResponseWarnings([], 'example.com')).toEqual([]);
+	});
+});
+
+describe('extractDnsQueryParams', () => {
+	function makeReader(params: Record<string, unknown>): DnsParameterReader {
+		return {
+			getParam: (name: string, fallback?: unknown) => (name in params ? params[name] : fallback),
+		};
+	}
+
+	it('extracts params and resolves well-known servers', async () => {
+		const reader = makeReader({
+			domain: 'example.com',
+			recordType: 'A',
+			resolverMode: 'wellKnown',
+			resolvers: ['Cloudflare'],
+			options: {},
+		});
+
+		const result = await extractDnsQueryParams(reader);
+
+		expect(result.domain).toBe('example.com');
+		expect(result.recordType).toBe('A');
+		expect(result.resolverMode).toBe('wellKnown');
+		expect(result.servers.length).toBeGreaterThan(0);
+		expect(result.servers[0]!.address).toBe('1.1.1.1');
+	});
+
+	it('passes timeout and retryCount through to clientOptions', async () => {
+		const reader = makeReader({
+			domain: 'example.com',
+			recordType: 'AAAA',
+			resolverMode: 'wellKnown',
+			resolvers: ['Cloudflare'],
+			options: { timeout: 5000, retryCount: 3 },
+		});
+
+		const result = await extractDnsQueryParams(reader);
+
+		expect(result.clientOptions).toEqual({
+			timeoutMilliseconds: 5000,
+			retryCount: 3,
+		});
+	});
+
+	it('resolves custom servers from fixedCollection shape', async () => {
+		const reader = makeReader({
+			domain: 'example.com',
+			recordType: 'MX',
+			resolverMode: 'custom',
+			customServers: {
+				serverValues: [{ address: '10.0.0.1', port: 5353 }],
+			},
+			options: {},
+		});
+
+		const result = await extractDnsQueryParams(reader);
+
+		expect(result.servers).toEqual([{ address: '10.0.0.1', port: 5353 }]);
+	});
+
+	it('returns empty servers when wellKnown names list is empty', async () => {
+		const reader = makeReader({
+			domain: 'example.com',
+			recordType: 'A',
+			resolverMode: 'wellKnown',
+			resolvers: [],
+			options: {},
+		});
+
+		const result = await extractDnsQueryParams(reader);
+
+		expect(result.servers).toEqual([]);
+	});
+
+	it('preserves raw options including outputConsistencyCheck', async () => {
+		const reader = makeReader({
+			domain: 'example.com',
+			recordType: 'A',
+			resolverMode: 'wellKnown',
+			resolvers: ['Cloudflare'],
+			options: { outputConsistencyCheck: false },
+		});
+
+		const result = await extractDnsQueryParams(reader);
+
+		expect(result.options.outputConsistencyCheck).toBe(false);
 	});
 });

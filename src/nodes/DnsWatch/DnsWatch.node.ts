@@ -1,4 +1,5 @@
 import type {
+	INode,
 	INodeType,
 	INodeTypeDescription,
 	IPollFunctions,
@@ -6,18 +7,16 @@ import type {
 	IDataObject,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import type { DnsRecordType, DnsServerResult } from '../../transport';
+import type { DnsServerResult } from '../../transport';
 import { querySingleServer } from '../../transport';
-import type { FormattedRecord } from '../shared/dns-node-helpers';
+import type { DnsQueryParams, FormattedRecord } from '../shared/dns-node-helpers';
 import {
 	assertNotFormerr,
-	buildClientOptions,
 	buildSingleServerOutput,
 	buildWarningMessage,
-	extractCustomServers,
+	extractDnsQueryParams,
 	formatServerResult,
 	isWarnableResponseCode,
-	resolveTargetDnsServers,
 	serializeAnswerValues,
 } from '../shared/dns-node-helpers';
 import {
@@ -78,6 +77,75 @@ export function checkFireCondition(
 		throw new Error(`Unknown fire condition mode: ${mode}`);
 	}
 	return checker(context);
+}
+
+async function executePollQuery(params: DnsQueryParams, node: INode): Promise<DnsServerResult> {
+	const { domain, recordType, clientOptions } = params;
+	const server = params.servers[0]!;
+	let result: DnsServerResult;
+	try {
+		result = await querySingleServer(domain, recordType, server, clientOptions);
+	} catch (error) {
+		throw new NodeOperationError(node, `DNS query failed: ${(error as Error).message}`);
+	}
+	assertNotFormerr(result, domain, node);
+	return result;
+}
+
+export interface PollFireConditionContext {
+	currentHash: string;
+	currentHasRecords: boolean;
+	currentAnswers: FormattedRecord[];
+	staticData: WatchStaticData;
+	fireOn: string;
+	expectedValue: string;
+	isManualTest: boolean;
+}
+
+export function evaluatePollFireCondition(context: PollFireConditionContext): boolean {
+	const { currentHash, currentHasRecords, staticData, isManualTest } = context;
+
+	if (staticData.previousAnswerHash === undefined) {
+		staticData.previousAnswerHash = currentHash;
+		staticData.previousHadRecords = currentHasRecords;
+		return isManualTest;
+	}
+
+	if (isManualTest) return true;
+
+	const shouldFire = checkFireCondition(context.fireOn, {
+		currentHash,
+		previousHash: staticData.previousAnswerHash,
+		currentHasRecords,
+		previousHadRecords: staticData.previousHadRecords ?? false,
+		currentAnswers: context.currentAnswers,
+		expectedValue: context.expectedValue,
+	});
+
+	staticData.previousAnswerHash = currentHash;
+	staticData.previousHadRecords = currentHasRecords;
+
+	return shouldFire;
+}
+
+export function shouldTriggerFire(
+	result: DnsServerResult,
+	staticData: WatchStaticData,
+	fireOn: string,
+	expectedValue: string,
+	isManualTest: boolean,
+): boolean {
+	const formatted = formatServerResult(result);
+	const currentAnswers = formatted.answers;
+	return evaluatePollFireCondition({
+		currentHash: serializeAnswerValues(currentAnswers),
+		currentHasRecords: currentAnswers.length > 0,
+		currentAnswers,
+		staticData,
+		fireOn,
+		expectedValue,
+		isManualTest,
+	});
 }
 
 export class DnsWatch implements INodeType {
@@ -223,101 +291,39 @@ export class DnsWatch implements INodeType {
 	};
 
 	async poll(this: IPollFunctions): Promise<INodeExecutionData[][] | null> {
-		const domain = this.getNodeParameter('domain') as string;
-		const recordType = this.getNodeParameter('recordType') as DnsRecordType;
-		const resolverMode = this.getNodeParameter('resolverMode') as string;
-		const fireOn = this.getNodeParameter('fireOn') as string;
-		const options = this.getNodeParameter('options', {}) as {
-			timeout?: number;
-			retryCount?: number;
-			recursionDesired?: boolean;
-		};
+		const params = await extractDnsQueryParams({
+			getParam: (name, fallback) => this.getNodeParameter(name, fallback),
+		});
 
-		const clientOptions = buildClientOptions(options);
-
-		const wellKnownNames =
-			resolverMode === 'wellKnown' ? (this.getNodeParameter('resolvers') as string[]) : [];
-		const customServers =
-			resolverMode === 'custom'
-				? extractCustomServers(this.getNodeParameter('customServers', {}))
-				: [];
-
-		let servers;
-		try {
-			servers = await resolveTargetDnsServers({
-				mode: resolverMode,
-				wellKnownNames,
-				customServers,
-				domain,
-				clientOptions,
-			});
-		} catch (error) {
-			throw new NodeOperationError(this.getNode(), (error as Error).message);
-		}
-
-		if (servers.length === 0) {
+		if (params.servers.length === 0) {
 			throw new NodeOperationError(
 				this.getNode(),
-				`No DNS servers resolved for mode "${resolverMode}"`,
+				`No DNS servers resolved for mode "${params.resolverMode}"`,
 			);
 		}
 
-		const server = servers[0]!;
-		let result: DnsServerResult;
-		try {
-			result = await querySingleServer(domain, recordType, server, clientOptions);
-		} catch (error) {
-			throw new NodeOperationError(this.getNode(), `DNS query failed: ${(error as Error).message}`);
-		}
-
-		assertNotFormerr(result, domain, this.getNode());
+		const result = await executePollQuery(params, this.getNode());
 		if (isWarnableResponseCode(result.responseCode)) {
-			this.logger.warn(buildWarningMessage(domain, result.server.address, result.responseCode));
+			this.logger.warn(
+				buildWarningMessage(params.domain, result.server.address, result.responseCode),
+			);
 		}
 
-		const formatted = formatServerResult(result);
-		const currentAnswers = formatted.answers;
-		const currentHash = serializeAnswerValues(currentAnswers);
-		const currentHasRecords = currentAnswers.length > 0;
-
-		const isManualTest = this.getMode() === 'manual';
-		const staticData = this.getWorkflowStaticData('node') as WatchStaticData;
-
-		if (staticData.previousAnswerHash === undefined) {
-			staticData.previousAnswerHash = currentHash;
-			staticData.previousHadRecords = currentHasRecords;
-			if (!isManualTest) {
-				return null;
-			}
-		}
-
-		if (!isManualTest) {
-			const expectedValue =
-				fireOn === 'valueMatches' ? (this.getNodeParameter('expectedValue') as string) : '';
-
-			const shouldFire = checkFireCondition(fireOn, {
-				currentHash,
-				previousHash: staticData.previousAnswerHash,
-				currentHasRecords,
-				previousHadRecords: staticData.previousHadRecords ?? false,
-				currentAnswers,
-				expectedValue,
-			});
-
-			staticData.previousAnswerHash = currentHash;
-			staticData.previousHadRecords = currentHasRecords;
-
-			if (!shouldFire) {
-				return null;
-			}
-		}
+		const fireOn = this.getNodeParameter('fireOn') as string;
+		const fired = shouldTriggerFire(
+			result,
+			this.getWorkflowStaticData('node') as WatchStaticData,
+			fireOn,
+			fireOn === 'valueMatches' ? (this.getNodeParameter('expectedValue') as string) : '',
+			this.getMode() === 'manual',
+		);
+		if (!fired) return null;
 
 		const outputJson = buildSingleServerOutput(
-			domain,
-			recordType,
+			params.domain,
+			params.recordType,
 			result,
 		) as unknown as IDataObject;
-
 		return [[{ json: outputJson, pairedItem: { item: 0 } }]];
 	}
 }

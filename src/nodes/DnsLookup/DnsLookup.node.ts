@@ -1,25 +1,24 @@
 import type {
 	IDataObject,
 	IExecuteFunctions,
+	INode,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
 	NodeExecutionWithMetadata,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import type { DnsRecordType, DnsServerResult } from '../../transport';
+import type { DnsServerResult } from '../../transport';
 import { queryMultipleServers, querySingleServer } from '../../transport';
-import type { FormattedRecord, ServerResultEntry } from '../shared/dns-node-helpers';
+import type { DnsQueryParams, ServerResultEntry } from '../shared/dns-node-helpers';
 import {
 	assertNotFormerr,
-	buildClientOptions,
 	buildSingleServerOutput,
 	buildWarningMessage,
 	collectResponseWarnings,
-	extractCustomServers,
+	extractDnsQueryParams,
 	formatServerResult,
 	isWarnableResponseCode,
-	resolveTargetDnsServers,
 	serializeAnswerValues,
 } from '../shared/dns-node-helpers';
 import {
@@ -30,14 +29,13 @@ import {
 	COMMON_DNS_OPTIONS,
 } from '../shared/dns-node-properties';
 
-export type { FormattedRecord, ServerResultEntry };
-export {
-	buildClientOptions,
-	buildSingleServerOutput,
-	extractCustomServers,
-	formatServerResult,
-	serializeAnswerValues,
-};
+type HintCallback = (hint: { message: string; type: 'warning' | 'info' | 'danger' }) => void;
+
+interface LookupItemContext {
+	node: INode;
+	itemIndex: number;
+	addHint: HintCallback;
+}
 
 export function computeConsistencyFlags(entries: ServerResultEntry[]): {
 	consistent: boolean;
@@ -85,6 +83,56 @@ export function buildMultiServerOutput(
 	}
 
 	return output;
+}
+
+async function executeSingleServerQuery(
+	params: DnsQueryParams,
+	context: LookupItemContext,
+): Promise<Record<string, unknown>> {
+	const { domain, recordType, clientOptions } = params;
+	const server = params.servers[0]!;
+	const result = await querySingleServer(domain, recordType, server, clientOptions);
+	assertNotFormerr(result, domain, context.node, context.itemIndex);
+	if (isWarnableResponseCode(result.responseCode)) {
+		context.addHint({
+			message: buildWarningMessage(domain, result.server.address, result.responseCode),
+			type: 'warning',
+		});
+	}
+	return buildSingleServerOutput(domain, recordType, result);
+}
+
+async function executeMultiServerQuery(
+	params: DnsQueryParams,
+	context: LookupItemContext,
+): Promise<Record<string, unknown>> {
+	const { domain, recordType, servers, clientOptions } = params;
+	const queryResult = await queryMultipleServers(domain, recordType, servers, clientOptions);
+	for (const result of queryResult.results) {
+		assertNotFormerr(result, domain, context.node, context.itemIndex);
+	}
+	for (const warning of collectResponseWarnings(queryResult.results, domain)) {
+		context.addHint({ message: warning, type: 'warning' });
+	}
+	const consistencyCheck = params.options.outputConsistencyCheck !== false;
+	return buildMultiServerOutput(domain, recordType, queryResult.results, consistencyCheck);
+}
+
+async function processLookupItem(
+	params: DnsQueryParams,
+	context: LookupItemContext,
+): Promise<Record<string, unknown>> {
+	if (params.servers.length === 0) {
+		throw new NodeOperationError(
+			context.node,
+			`No DNS servers resolved for mode "${params.resolverMode}"`,
+			{ itemIndex: context.itemIndex },
+		);
+	}
+
+	return params.servers.length === 1
+		? executeSingleServerQuery(params, context)
+		: executeMultiServerQuery(params, context);
 }
 
 export class DnsLookup implements INodeType {
@@ -200,86 +248,19 @@ export class DnsLookup implements INodeType {
 
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			try {
-				const domain = this.getNodeParameter('domain', itemIndex) as string;
-				const recordType = this.getNodeParameter('recordType', itemIndex) as DnsRecordType;
-				const resolverMode = this.getNodeParameter('resolverMode', itemIndex) as string;
-				const options = this.getNodeParameter('options', itemIndex, {}) as {
-					timeout?: number;
-					retryCount?: number;
-					recursionDesired?: boolean;
-					outputConsistencyCheck?: boolean;
+				const params = await extractDnsQueryParams({
+					getParam: (name, fallback) => this.getNodeParameter(name, itemIndex, fallback),
+				});
+				const context: LookupItemContext = {
+					node: this.getNode(),
+					itemIndex,
+					addHint: (hint) => this.addExecutionHints(hint),
 				};
-
-				const clientOptions = buildClientOptions(options);
-
-				const wellKnownNames =
-					resolverMode === 'wellKnown'
-						? (this.getNodeParameter('resolvers', itemIndex) as string[])
-						: [];
-				const customServers =
-					resolverMode === 'custom'
-						? extractCustomServers(this.getNodeParameter('customServers', itemIndex, {}))
-						: [];
-
-				const servers = await resolveTargetDnsServers({
-					mode: resolverMode,
-					wellKnownNames,
-					customServers,
-					domain,
-					clientOptions,
-				});
-
-				if (servers.length === 0) {
-					throw new NodeOperationError(
-						this.getNode(),
-						`No DNS servers resolved for mode "${resolverMode}"`,
-						{ itemIndex },
-					);
-				}
-
-				const isSingleServer = servers.length === 1;
-				let outputJson: IDataObject;
-
-				if (isSingleServer) {
-					const result = await querySingleServer(domain, recordType, servers[0]!, clientOptions);
-					assertNotFormerr(result, domain, this.getNode(), itemIndex);
-					if (isWarnableResponseCode(result.responseCode)) {
-						this.addExecutionHints({
-							message: buildWarningMessage(domain, result.server.address, result.responseCode),
-							type: 'warning',
-						});
-					}
-					outputJson = buildSingleServerOutput(
-						domain,
-						recordType,
-						result,
-					) as unknown as IDataObject;
-				} else {
-					const queryResult = await queryMultipleServers(
-						domain,
-						recordType,
-						servers,
-						clientOptions,
-					);
-					for (const result of queryResult.results) {
-						assertNotFormerr(result, domain, this.getNode(), itemIndex);
-					}
-					const warnings = collectResponseWarnings(queryResult.results, domain);
-					for (const warning of warnings) {
-						this.addExecutionHints({ message: warning, type: 'warning' });
-					}
-					const consistencyCheck = options.outputConsistencyCheck !== false;
-					outputJson = buildMultiServerOutput(
-						domain,
-						recordType,
-						queryResult.results,
-						consistencyCheck,
-					) as unknown as IDataObject;
-				}
-
-				const wrappedItems = this.helpers.constructExecutionMetaData([{ json: outputJson }], {
-					itemData: { item: itemIndex },
-				});
+				const outputJson = await processLookupItem(params, context);
+				const wrappedItems = this.helpers.constructExecutionMetaData(
+					[{ json: outputJson as IDataObject }],
+					{ itemData: { item: itemIndex } },
+				);
 				returnData.push(...wrappedItems);
 			} catch (error) {
 				if (this.continueOnFail()) {
@@ -290,11 +271,7 @@ export class DnsLookup implements INodeType {
 					returnData.push(...errorItems);
 					continue;
 				}
-
-				if (error instanceof NodeOperationError) {
-					throw error;
-				}
-
+				if (error instanceof NodeOperationError) throw error;
 				throw new NodeOperationError(this.getNode(), error as Error, { itemIndex });
 			}
 		}
