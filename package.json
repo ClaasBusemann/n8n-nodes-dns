@@ -31,8 +31,18 @@
 		"ptr-record",
 		"soa-record",
 		"ns-record",
+		"caa-record",
+		"naptr-record",
 		"network",
-		"monitoring"
+		"monitoring",
+		"dns-monitoring",
+		"dns-propagation",
+		"dig",
+		"nslookup",
+		"resolver",
+		"reverse-dns",
+		"rdns",
+		"rbl"
 	],
 	"author": {
 		"name": "Claas Busemann"
